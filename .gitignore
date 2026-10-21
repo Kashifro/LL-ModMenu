@@ -1,0 +1,9 @@
+﻿inf.md
+.xmake/
+**/.xmake/
+build/
+**/build/
+bin/
+**/bin/
+*.pdb
+backup/

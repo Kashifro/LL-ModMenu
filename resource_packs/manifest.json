@@ -1,0 +1,17 @@
+{
+    "format_version": 2,
+    "header": {
+        "name": "LL-ModMenu UI",
+        "description": "LL-ModMenu start-screen button.",
+        "uuid": "0f88edb7-4218-4fca-8a48-9b826cac27b4",
+        "version": [0, 1, 0],
+        "min_engine_version": [1, 21, 0]
+    },
+    "modules": [
+        {
+            "type": "resources",
+            "uuid": "5a54cb36-6aaa-4567-8301-25b14feca545",
+            "version": [0, 1, 0]
+        }
+    ]
+}

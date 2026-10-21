@@ -1,0 +1,15 @@
+﻿{
+    "name": "LL-ModMenu",
+    "entry": "ModMenu.dll",
+    "version": "1.0.0",
+    "type": "native",
+    "platform": "client",
+    "author": "Kashifro",
+    "description": "Browse installed LeviLamina mods and configure their settings with LL-ModMenu.",
+    "extraInfo": {
+        "website": "https://github.com/Kashifro/ModMenu",
+        "source": "https://github.com/Kashifro/ModMenu",
+        "issues": "https://github.com/Kashifro/ModMenu/issues",
+        "license": "MIT"
+    }
+}
