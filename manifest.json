@@ -7,9 +7,9 @@
     "author": "Kashifro",
     "description": "Browse installed LeviLamina mods and configure their settings with LL-ModMenu.",
     "extraInfo": {
-        "website": "https://github.com/Kashifro/ModMenu",
-        "source": "https://github.com/Kashifro/ModMenu",
-        "issues": "https://github.com/Kashifro/ModMenu/issues",
+        "website": "https://github.com/Kashifro/LL-ModMenu",
+        "source": "https://github.com/Kashifro/LL-ModMenu",
+        "issues": "https://github.com/Kashifro/LL-ModMenu/issues",
         "license": "MIT"
     }
 }
