@@ -7,7 +7,13 @@
 #include <utility>
 #include <vector>
 
-namespace nugget::modmenu {
+namespace modmenu {
+
+inline constexpr const char* BADGE_CLIENT = "Client";
+inline constexpr const char* BADGE_MOD = "Mod";
+inline constexpr const char* BADGE_LIBRARY = "Library";
+inline constexpr const char* BADGE_DISABLED = "Disabled";
+inline constexpr const char* BADGE_NOT_LOADED = "Not loaded";
 
 struct ModInfo {
     std::string id;
@@ -17,13 +23,13 @@ struct ModInfo {
     std::string author;
     std::string icon;
     std::function<std::vector<Setting>()> settings;
-    int quickConfigKey = 0;
+    std::function<void()> openScreen;
     std::string website;
     std::string issues;
     std::string source;
     std::string license;
     std::vector<std::pair<std::string, std::string>> links;
-    std::vector<std::string> badges = {"Client"};
+    std::vector<std::string> badges = {BADGE_CLIENT};
 };
 
 }

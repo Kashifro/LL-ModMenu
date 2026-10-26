@@ -7,3 +7,5 @@ bin/
 **/bin/
 *.pdb
 backup/
+*.sh
+*.zip

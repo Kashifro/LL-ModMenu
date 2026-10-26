@@ -1,20 +1,18 @@
-#include "nugget/Settings.hpp"
+#include "platform/Prefs.hpp"
 
 #include "ll/api/io/FileUtils.h"
-#include "ll/api/mod/NativeMod.h"
+#include "platform/Log.hpp"
 #include "nlohmann/json.hpp"
 
 #include <mutex>
 
-namespace nugget::settings {
+namespace modmenu::prefs {
 namespace {
 
 struct Store {
     std::mutex mutex;
     nlohmann::json data = nlohmann::json::object();
     bool loaded = false;
-    bool dirty = false;
-    bool immediateWrites = true;
 };
 
 Store& S() {
@@ -22,13 +20,13 @@ Store& S() {
     return s;
 }
 
-std::filesystem::path File() { return ll::mod::NativeMod::current()->getDataDir() / "settings.json"; }
+std::filesystem::path File() { return Self().getDataDir() / "settings.json"; }
 
 void Load(Store& s) {
     if (s.loaded) return;
     s.loaded = true;
     if (auto text = ll::file_utils::readFile(File())) {
-        auto j = nlohmann::json::parse(*text, nullptr, false);   
+        auto j = nlohmann::json::parse(*text, nullptr, false);
         if (j.is_object()) s.data = std::move(j);
     }
 }
@@ -49,13 +47,10 @@ void Set(const std::string& key, T value) {
     Load(s);
     if (const auto it = s.data.find(key); it != s.data.end() && *it == value) return;
     s.data[key] = value;
-    s.dirty = true;
-    if (s.immediateWrites) {
-        s.dirty = !ll::file_utils::writeFile(File(), s.data.dump(2) + "\n");
-    }
+    ll::file_utils::writeFile(File(), s.data.dump(2) + "\n");
 }
 
-} 
+}
 
 bool GetBool(const std::string& key, bool def) {
     return Get(key, def, [](const nlohmann::json& j) { return j.is_boolean(); });
@@ -72,22 +67,4 @@ std::string GetString(const std::string& key, const std::string& def) {
 }
 void SetString(const std::string& key, const std::string& value) { Set(key, value); }
 
-void SetImmediateWrites(bool enabled) {
-    auto& s = S();
-    std::lock_guard lock(s.mutex);
-    Load(s);
-    s.immediateWrites = enabled;
-    if (enabled && s.dirty) {
-        s.dirty = !ll::file_utils::writeFile(File(), s.data.dump(2) + "\n");
-    }
 }
-
-void Flush() {
-    auto& s = S();
-    std::lock_guard lock(s.mutex);
-    Load(s);
-    if (!s.dirty) return;
-    s.dirty = !ll::file_utils::writeFile(File(), s.data.dump(2) + "\n");
-}
-
-} 

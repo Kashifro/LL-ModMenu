@@ -1,10 +1,9 @@
 # Source layout
 
-- `api/` contains the versioned C ABI, its exports, and registration and screen-builder implementation.
-- `settings/` contains built-in LL-ModMenu settings, settings-factory caching, and key conflict lookup.
-- `view/` contains menu screens and shared drawing helpers. `view/internal/` holds private view declarations.
-- `internal/` contains LL-ModMenu registry and settings declarations used by implementation files.
-- `Registry.cpp`, `ModDiscovery.cpp`, `ModMenu.cpp`, and `ModMenu.hpp` are the top-level LL-ModMenu lifecycle and registry entry points.
-- `src/MossMC/` adapts MossUI to Minecraft and LeviLamina.
-- `src/nugget/` contains the platform-facing settings, keybind, logging, and client-context support.
-- `src/hooks/` and `src/mod/` contain LeviLamina hooks and mod lifecycle code.
+- `modmenu/` is LL-ModMenu itself. `ModMenu.*` is the lifecycle, `Registry.cpp` the mod list, `ModDiscovery.cpp` finds installed mods from their `manifest.json`, `Launch.cpp` opens URLs and folders, and `JsonConfig.cpp` builds a mod's settings page from its `config/config.json` and `config/modmenu.json`.
+- `modmenu/settings/` holds the built-in LL-ModMenu settings and the per-mod settings cache.
+- `modmenu/view/` holds the menu screens and shared drawing helpers; `view/internal/` holds private view declarations.
+- `modmenu/internal/` holds declarations shared by implementation files only (registry, settings, JSON config, launching).
+- `platform/` is game-facing support: the key-value preference store (`Prefs`), the open-menu keybind, logging, and the client-context lookup.
+- `MossMC/` adapts MossUI to Minecraft and LeviLamina.
+- `hooks/` and `mod/` hold the LeviLamina hooks and the mod lifecycle.

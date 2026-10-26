@@ -1,11 +1,11 @@
-#include "nugget/ClientContext.hpp"
+#include "platform/ClientContext.hpp"
 
 #include "ll/api/service/TargetedBedrock.h"
 
-namespace nugget::clientctx {
+namespace modmenu::clientctx {
 
 namespace {
-std::string screenName;       
+std::string screenName;
 ClientInstance* captured = nullptr;
 }
 
@@ -23,4 +23,4 @@ void SetScreenName(const std::string& name) {
 
 bool IsOnScreen(const std::string& name) { return screenName == name; }
 
-} 
+}

@@ -1,10 +1,9 @@
-
 #include "hooks/Hooks.hpp"
 
 #include "MossUI/MossUI.hpp"
 #include "modmenu/ModMenu.hpp"
-#include "nugget/ClientContext.hpp"
-#include "nugget/Log.hpp"
+#include "platform/ClientContext.hpp"
+#include "platform/Log.hpp"
 
 #include "ll/api/memory/Hook.h"
 #include "ll/api/mod/NativeMod.h"
@@ -42,36 +41,32 @@ constexpr uint32_t MODS_BUTTON_ID = Fnv1a32("button.mods_button_clicked");
 void* wired = nullptr;
 bool resourcePackPathRegistered = false;
 bool resourcePackEnabled = false;
-bool resourcePackLookupLogged = false;
-bool resourceRepositoryWaitLogged = false;
-bool resourceManifestMissingLogged = false;
 bool resourcePackHookInstalled = false;
 std::filesystem::path resourcePackDir;
+
+// True the first time it is called for a given flag; the retry loops below log each problem once.
+bool Once(bool& flag) { return !std::exchange(flag, true); }
 
 void RegisterResourcePackPath(ResourcePackRepository& repo) {
     if (resourcePackPathRegistered) return;
     const auto manifestPath = resourcePackDir / "ModMenu" / "manifest.json";
     if (!std::filesystem::exists(manifestPath)) {
-        if (!resourceManifestMissingLogged) {
-            nugget::Log().error("LL-ModMenu resource-pack manifest is missing: {}", manifestPath.string());
-            resourceManifestMissingLogged = true;
-        }
+        static bool logged = false;
+        if (Once(logged)) modmenu::Log().error("LL-ModMenu resource-pack manifest is missing: {}", manifestPath.string());
         return;
     }
 
     repo.addCustomResourcePackPath(resourcePackDir, PackType::Resources);
     repo.refreshPacks();
     resourcePackPathRegistered = true;
-    nugget::Log().info("Registered LL-ModMenu resource-pack search path {}", resourcePackDir.string());
+    modmenu::Log().info("Registered LL-ModMenu resource-pack search path {}", resourcePackDir.string());
 }
 
 void EnsureModResourcePack() {
     auto repository = ll::service::getResourcePackRepository(true);
     if (!repository) {
-        if (!resourceRepositoryWaitLogged) {
-            nugget::Log().warn("Client resource-pack repository is not available yet");
-            resourceRepositoryWaitLogged = true;
-        }
+        static bool logged = false;
+        if (Once(logged)) modmenu::Log().warn("Client resource-pack repository is not available yet");
         return;
     }
 
@@ -82,46 +77,42 @@ void EnsureModResourcePack() {
     auto identity = PackIdVersion::fromString("0f88edb7-4218-4fca-8a48-9b826cac27b4_0.1.0");
     identity.mPackType = PackType::Resources;
     if (!repo.getResourcePackForPackId(identity)) {
-        if (!resourcePackLookupLogged) {
-            nugget::Log().warn("LL-ModMenu resource pack is not in the resource repository yet");
-            resourcePackLookupLogged = true;
-        }
+        static bool logged = false;
+        if (Once(logged)) modmenu::Log().warn("LL-ModMenu resource pack is not in the resource repository yet");
         return;
     }
 
     auto servicePacks = *repo.mServicePacks;
     if (std::find(servicePacks.begin(), servicePacks.end(), identity) == servicePacks.end()) {
         servicePacks.push_back(identity);
-        nugget::Log().info("Adding LL-ModMenu resource pack to the service-pack stack");
+        modmenu::Log().info("Adding LL-ModMenu resource pack to the service-pack stack");
         if (!repo.setServicePacks(std::move(servicePacks))) {
-            nugget::Log().error("LeviLamina rejected the LL-ModMenu resource pack service-pack entry");
+            modmenu::Log().error("LeviLamina rejected the LL-ModMenu resource pack service-pack entry");
             return;
         }
     }
 
     resourcePackEnabled = true;
-    nugget::Log().info("Enabled LL-ModMenu resource pack in the service-pack stack");
+    modmenu::Log().info("Enabled LL-ModMenu resource pack in the service-pack stack");
 }
 
 void WireModsButton(::StartMenuScreenController* c) {
-    EnsureModResourcePack();
     if (wired == c) return;
     wired = c;
     c->registerButtonPressedHandler(MODS_BUTTON_ID, [](::UIPropertyBag*) -> ::ui::ViewRequest {
         if (!MossUI::IsOpen()) {
             try {
-                nugget::modmenu::Open();
+                modmenu::Open();
             } catch (const std::exception& e) {
-                nugget::Log().error("Mods button failed: {}", e.what());
+                modmenu::Log().error("Mods button failed: {}", e.what());
             } catch (...) {
-                nugget::Log().error("Mods button failed");
+                modmenu::Log().error("Mods button failed");
             }
         }
         return static_cast<::ui::ViewRequest>(
             static_cast<uint>(::ui::ViewRequest::ConsumeEvent) | static_cast<uint>(::ui::ViewRequest::DelayedFocusRefresh));
     });
 }
-
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-variable"
@@ -134,7 +125,7 @@ LL_TYPE_INSTANCE_HOOK(
     bool isInitFinished
 ) {
     EnsureModResourcePack();
-    nugget::clientctx::Capture(this);
+    modmenu::clientctx::Capture(this);
     return origin(isInitFinished);
 }
 
@@ -201,16 +192,16 @@ LL_TYPE_INSTANCE_HOOK(
 
 bool installed = false;
 
-} 
+}
 
-namespace nugget::hooks {
+namespace modmenu::hooks {
 
 void InstallResourcePackHook(const std::filesystem::path& resourceDir) {
     resourcePackDir = resourceDir;
     if (resourcePackHookInstalled) return;
     ResourcePackRepositoryCtorHook::hook();
     resourcePackHookInstalled = true;
-    nugget::Log().info("Installed early resource repository hook for {}", resourcePackDir.string());
+    modmenu::Log().info("Installed early resource repository hook for {}", resourcePackDir.string());
     EnsureModResourcePack();
 }
 
@@ -221,7 +212,6 @@ void InstallClientHooks() {
     ClientInstanceGrabHook::hook();
     StartMenuCtorHook::hook();
     StartMenuTickHook::hook();
-    EnsureModResourcePack();
 }
 
 void RemoveClientHooks() {
@@ -234,4 +224,4 @@ void RemoveClientHooks() {
     wired = nullptr;
 }
 
-} 
+}

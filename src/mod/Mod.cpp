@@ -1,10 +1,8 @@
-
-#include "mod/Mod.h"
+#include "mod/Mod.hpp"
 
 #include "hooks/Hooks.hpp"
 #include "modmenu/ModMenu.hpp"
-#include "nugget/Log.hpp"
-#include "nugget/Settings.hpp"
+#include "platform/Log.hpp"
 
 #include "MossMC/MossMC.hpp"
 #include "MossUI/MossUI.hpp"
@@ -19,39 +17,38 @@ Mod& Mod::getInstance() {
 }
 
 bool Mod::load() {
-    getSelf().getLogger().debug("Loading LL-ModMenu...");
-    nugget::hooks::InstallResourcePackHook(getSelf().getResourceDir());
+    modmenu::Log().debug("Loading LL-ModMenu...");
+    modmenu::hooks::InstallResourcePackHook(getSelf().getResourceDir());
     return true;
 }
 
 bool Mod::enable() {
-    auto& logger = getSelf().getLogger();
+    auto& logger = modmenu::Log();
     logger.info("Enabling LL-ModMenu");
     logger.info("LL-ModMenu resource-pack directory: {}", getSelf().getResourceDir().string());
 
     MossMC::Install();
 
-    nugget::hooks::InstallEvents();
-    nugget::hooks::InstallClientHooks();
+    modmenu::hooks::InstallEvents();
+    modmenu::hooks::InstallClientHooks();
 
-    nugget::modmenu::InitModMenuEntry();
+    modmenu::InitModMenuEntry();
 
-    logger.info("LL-ModMenu enabled - look for the Mods button on the start screen");
+    logger.info("LL-ModMenu enabled  look for the Mods button on the start screen");
     return true;
 }
 
 bool Mod::disable() {
-    auto& logger = getSelf().getLogger();
+    auto& logger = modmenu::Log();
 
-    nugget::settings::Flush();
-    MossUI::Close();   
-    nugget::hooks::RemoveEvents();
-    nugget::hooks::RemoveClientHooks();
+    MossUI::Close();
+    modmenu::hooks::RemoveEvents();
+    modmenu::hooks::RemoveClientHooks();
 
     logger.info("LL-ModMenu disabled");
     return true;
 }
 
-} 
+}
 
 LL_REGISTER_MOD(modmenu_mod::Mod, modmenu_mod::Mod::getInstance());

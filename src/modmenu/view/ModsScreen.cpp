@@ -1,18 +1,15 @@
 #include "modmenu/view/Common.hpp"
 #include "modmenu/view/internal/ModDetails.hpp"
 
-namespace nugget::modmenu::view {
+namespace modmenu::view {
 
 namespace {
-
 
 class ModsScreen : public Screen {
 public:
     ModsScreen()
         : search(std::make_shared<SearchField>("Search for mods")),
           confirmDialog(std::make_shared<ConfirmationDialog>()) {}
-
-    void OnClose() override { settings::Flush(); }
 
     bool OnKey(int key) override {
         if (shown.empty()) return false;
@@ -37,10 +34,9 @@ public:
         listRect = {0, paneW, listTop, listBottom};
         descRect = {rightX, static_cast<float>(W), MOD_DETAILS_HEADER_Y + 60.0f, listBottom};
 
-        sortDesc = settings::GetBool(OPT_SORT_DESC, false);
-        showMode = std::clamp(settings::GetInt(OPT_SHOW, 0), 0, 2);
+        sortDesc = Opt(OPT_SORT_DESC, false);
+        configurableOnly = prefs::GetInt(OPT_SHOW, 0) == 1;
 
-        
         const float sbw = paneW - 32.0f - 22.0f;
         searchX = paneW / 2.0f - sbw / 2.0f - 11.0f;
         search->bounds = {searchX, searchX + sbw, 22, 42};
@@ -49,8 +45,6 @@ public:
             .At({paneW / 2.0f + sbw / 2.0f - 8.0f, paneW / 2.0f + sbw / 2.0f + 12.0f, 22, 42})
             .Tip("Toggle filter options");
 
-        
-        static const char* SHOW_LABELS[] = {"All", "Configurable", "Quick Config"};
         const float sortW = 80.0f, showW = 112.0f, filtersW = sortW + showW + 2.0f;
         const float searchRowW = searchX + sbw + 22.0f;
         const bool sideBySide = filtersW + 76.0f + 20.0f < searchRowW;
@@ -59,7 +53,7 @@ public:
         if (filtersShown) {
             auto& sortBtn = root.Add<ConfirmButton>(sortDesc ? "Z-A" : "A-Z", [this] {
                 sortDesc = !sortDesc;
-                settings::SetBool(OPT_SORT_DESC, sortDesc);
+                prefs::SetBool(OPT_SORT_DESC, sortDesc);
                 lastQuery = "\x01";
                 Rebuild();
             });
@@ -67,15 +61,14 @@ public:
             sortBtn.glyph = sortDesc ? "sort_za" : "sort_az";
             sortBtn.bounds = {fx, fx + sortW, 45, 65};
             sortBtn.tooltip = std::string("Sort: ") + (sortDesc ? "Z-A" : "A-Z");
-            root.Add<ButtonWidget>(std::string("Show: ") + SHOW_LABELS[showMode], [this] {
-                showMode = (showMode + (ShiftHeld() ? 2 : 1)) % 3;
-                settings::SetInt(OPT_SHOW, showMode);
+            root.Add<ButtonWidget>(std::string("Show: ") + (configurableOnly ? "Configurable" : "All"), [this] {
+                configurableOnly = !configurableOnly;
+                prefs::SetInt(OPT_SHOW, configurableOnly);
                 lastQuery = "\x01";
                 Rebuild();
             }).bounds = {fx + sortW + 2.0f, fx + sortW + 2.0f + showW, 45, 65};
         }
 
-        
         list = &root.Add<RowList>();
         list->bounds = listRect;
         list->count = [this] { return static_cast<int>(shown.size()); };
@@ -91,7 +84,6 @@ public:
             if (HasSettings(static_cast<int>(m)) && (relX <= MOD_ICON_SIZE || dbl)) OpenConfig(m);
         };
 
-        
         desc = &root.Add<DescView>();
         desc->bounds = descRect;
         desc->onOpenLink = [this](const std::string& url) { ShowLinkPrompt(confirmDialog.get(), url); };
@@ -111,11 +103,10 @@ public:
                              MOD_DETAILS_HEADER_Y, MOD_DETAILS_HEADER_Y + 20.0f};
         configure->tooltip = "Configure...";
 
-        
         root.Add<ButtonWidget>("Open Mods Folder", [] {
-            OpenFolder(ll::mod::NativeMod::current()->getModDir().parent_path());
+            OpenFolder(Self().getModDir().parent_path());
         }).bounds = {W / 2.0f - 154.0f, W / 2.0f - 4.0f, static_cast<float>(H) - 28.0f, static_cast<float>(H) - 8.0f};
-        root.Add<ButtonWidget>("Done", [] { Close(); })
+        root.Add<ButtonWidget>("Done", [] { MossUI::Close(); })
             .bounds = {W / 2.0f + 4.0f, W / 2.0f + 154.0f, static_cast<float>(H) - 28.0f, static_cast<float>(H) - 8.0f};
 
         confirmDialog->bounds = {0.0f, w, 0.0f, h};
@@ -128,9 +119,8 @@ public:
     void Render(UI& ui) override {
         ApplyAccessibilitySettings();
         PreloadSprites(ui);
-        if (settingsRevision != AllSettingsRevision()) {
-            settingsRevision = AllSettingsRevision();
-            cfg.clear();
+        if (settingsRevision != SettingsRevision()) {
+            settingsRevision = SettingsRevision();
             lastQuery = "\x01";
         }
         if (lastQuery != search->state.text) { lastQuery = search->state.text; FillMods(); }
@@ -167,17 +157,14 @@ private:
     }
     bool HasSettings(int m) const {
         if (m < 0 || m >= static_cast<int>(Registry().size())) return false;
-        if (cfg.size() != Registry().size()) {
-            cfg.clear();
-            for (const auto& mod : Registry()) cfg.push_back(!SettingsOf(mod).empty());
-        }
-        return cfg[static_cast<size_t>(m)] != 0;
+        const ModInfo& mod = Registry()[static_cast<size_t>(m)];
+        return mod.openScreen || mod.settings;
     }
     void Select(size_t m) {
         if (static_cast<int>(m) == selected) return;
         selected = static_cast<int>(m);
         descDirty = true;
-        settings::SetString(OPT_LAST, Registry()[m].id);
+        prefs::SetString(OPT_LAST, Registry()[m].id);
     }
 
     void DrawModRow(UI& ui, size_t m, const Rect& box) {
@@ -218,16 +205,16 @@ private:
         const std::string q = Lower(search->state.text);
         const auto& mods = Registry();
         for (size_t i = 0; i < mods.size(); ++i) {
-            if (!Opt(OPT_SHOW_OFF) && HasBadge(mods[i], "Disabled")) continue;
-            if (!Opt(OPT_SHOW_LIBS) && HasBadge(mods[i], "Library")) continue;
-            if (!Opt(OPT_SHOW_UNLOADED) && HasBadge(mods[i], "Not loaded")) continue;
+            if (!Opt(OPT_SHOW_DISABLED) && HasBadge(mods[i], BADGE_DISABLED)) continue;
+            if (!Opt(OPT_SHOW_LIBRARIES) && HasBadge(mods[i], BADGE_LIBRARY)) continue;
+            if (!Opt(OPT_SHOW_UNLOADED) && HasBadge(mods[i], BADGE_NOT_LOADED)) continue;
             const auto containsQuery = [&q](const std::string& value) {
                 return Lower(value).find(q) != std::string::npos;
             };
             bool hit = q.empty() || containsQuery(mods[i].name) || containsQuery(mods[i].id) ||
                        containsQuery(mods[i].version) || containsQuery(mods[i].author) ||
-                       (Opt(OPT_FIND_DESC) && containsQuery(mods[i].description));
-            if (!hit && Opt(OPT_FIND_ROWS)) {
+                       (Opt(OPT_SEARCH_DESC) && containsQuery(mods[i].description));
+            if (!hit && Opt(OPT_SEARCH_SETTINGS)) {
                 std::function<bool(const std::vector<Setting>&)> matchesSetting = [&](const std::vector<Setting>& rows) {
                     for (const auto& row : rows) {
                         if (containsQuery(row.label) || containsQuery(row.tooltip) || matchesSetting(row.children))
@@ -238,14 +225,13 @@ private:
                 hit = matchesSetting(SettingsOf(mods[i]));
             }
             if (!hit) continue;
-            if (showMode == 1 && !HasSettings(static_cast<int>(i))) continue;
-            if (showMode == 2 && !mods[i].quickConfigKey) continue;
+            if (configurableOnly && !HasSettings(static_cast<int>(i))) continue;
             shown.push_back(i);
         }
         if (sortDesc) std::reverse(shown.begin(), shown.end());
 
         if (selected < 0 && Opt(OPT_REMEMBER, false)) {
-            const std::string last = settings::GetString(OPT_LAST, "");
+            const std::string last = prefs::GetString(OPT_LAST, "");
             for (size_t i : shown) if (mods[i].id == last) { selected = static_cast<int>(i); descDirty = true; break; }
         }
 
@@ -268,11 +254,10 @@ private:
     ButtonWidget* website = nullptr;
     ButtonWidget* issues = nullptr;
     std::vector<size_t> shown;
-    mutable std::vector<char> cfg;
     Rect listRect{0, 0, 0, 0}, descRect{0, 0, 0, 0};
     float paneW = 0, rightX = 0, searchX = 0;
     int selected = -1;
-    int showMode = 0;
+    bool configurableOnly = false;
     bool sortDesc = false;
     bool filtersShown = false;
     bool countVisible = true;
@@ -281,11 +266,11 @@ private:
     uint64_t settingsRevision = 0;
 };
 
-} 
+}
 
 std::shared_ptr<MossUI::Screen> ModsMenuScreen() {
     static const std::shared_ptr<ModsScreen> screen = std::make_shared<ModsScreen>();
     return screen;
 }
 
-} 
+}

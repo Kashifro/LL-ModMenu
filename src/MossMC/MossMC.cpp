@@ -3,9 +3,10 @@
 #include "ll/api/service/TargetedBedrock.h"
 #include "ll/api/utils/StringUtils.h"
 #include "mc/deps/application/AppPlatform.h"
-#include "nugget/ClientContext.hpp"
-#include "nugget/Log.hpp"
-#include "nugget/Settings.hpp"
+#include "modmenu/internal/Settings.hpp"
+#include "platform/ClientContext.hpp"
+#include "platform/Log.hpp"
+#include "platform/Prefs.hpp"
 
 #include "mc/client/game/ClientInstance.h"
 #include "mc/client/gui/CaretMeasureData.h"
@@ -26,15 +27,10 @@
 
 #include <glm/vec2.hpp>
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
 #include <Windows.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
-#include <cstring>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -53,7 +49,6 @@ using MossUI::Skin;
 using MossUI::TextRun;
 
 constexpr mce::Color WHITE{255, 255, 255, 255};
-
 
 RectangleArea ToArea(const Rect& r) {
     RectangleArea out;
@@ -88,7 +83,6 @@ const HashedString& FlushMaterial() {
     return m;
 }
 
-
 void DrawNinePatch(UIRenderContext& ctx, const mce::ClientTexture& texture, const Rect& r, float tw, float th,
                    float sw, float sh) {
     const float w = std::max(0.0f, r.x1 - r.x0), h = std::max(0.0f, r.y1 - r.y0);
@@ -107,7 +101,6 @@ void DrawNinePatch(UIRenderContext& ctx, const mce::ClientTexture& texture, cons
                           glm::vec2{uw[i], vh[j]}, false);
         }
 }
-
 
 mce::TexturePtr LoadTex(UIRenderContext& ctx, const std::string& path) {
     const std::filesystem::path fsPath(path);
@@ -140,6 +133,7 @@ public:
     void Begin(UIRenderContext& c) {
         ctx = &c;
         clips.clear();
+        ApplyClip();
         ++frame;
         font = DefaultFont();
         LoadSkins();
@@ -226,7 +220,7 @@ public:
     }
 
     bool ToGui(int rx, int ry, float& x, float& y) override {
-        auto* ci = nugget::clientctx::Client();
+        auto* ci = modmenu::clientctx::Client();
         const float scale = ci ? ci->getGuiScale() : 0.0f;
         if (scale < 1.0f) return false;
         x = static_cast<float>(rx) / scale;
@@ -234,24 +228,24 @@ public:
         return true;
     }
 
-    bool OverHud() override { return nugget::clientctx::IsOnScreen("hud_screen"); }
+    bool OverHud() override { return modmenu::clientctx::IsOnScreen("hud_screen"); }
 
     void GrabMouse() override {
-        if (auto* ci = nugget::clientctx::Client()) ci->grabMouse();
+        if (auto* ci = modmenu::clientctx::Client()) ci->grabMouse();
     }
     void ReleaseMouse() override {
-        if (auto* ci = nugget::clientctx::Client()) ci->releaseMouse();
+        if (auto* ci = modmenu::clientctx::Client()) ci->releaseMouse();
     }
     bool MouseGrabbed() override {
-        auto* ci = nugget::clientctx::Client();
+        auto* ci = modmenu::clientctx::Client();
         return ci && ci->getMouseGrabbed();
     }
 
     void Click() override {
-        if (!nugget::settings::GetBool("modmenu.click", true)) return;
-        const float volume = static_cast<float>(nugget::settings::GetInt("modmenu.click_volume", 100)) / 100.0f;
+        if (!modmenu::prefs::GetBool(modmenu::detail::OPT_CLICK, true)) return;
+        const float volume = static_cast<float>(modmenu::prefs::GetInt(modmenu::detail::OPT_CLICK_VOLUME, 100)) / 100.0f;
         if (volume <= 0.0f) return;
-        if (auto* ci = nugget::clientctx::Client()) ci->getSoundEngine()->playUI("random.click", volume, 1.0f);
+        if (auto* ci = modmenu::clientctx::Client()) ci->getSoundEngine()->playUI("random.click", volume, 1.0f);
     }
 
     void ScreenOpened() override {
@@ -261,7 +255,6 @@ public:
     UIRenderContext* ctx = nullptr;
     std::vector<RectangleArea> clips;
 
-    
     void ApplyClip() {
         if (clips.empty()) {
             ctx->setFullClippingRectangle();
@@ -275,7 +268,7 @@ public:
 private:
     static Font* DefaultFont() {
         try {
-            auto* client = nugget::clientctx::Client();
+            auto* client = modmenu::clientctx::Client();
             if (!client) return nullptr;
             FontHandle handle = client->getFontHandle();
             return handle.mDefaultFont ? &handle.getFont() : nullptr;
@@ -284,7 +277,6 @@ private:
         }
     }
 
-    
     void LoadSkins() {
         if (owner == ctx || skins[0].mClientTexture) return;
         owner = ctx;
@@ -294,7 +286,6 @@ private:
         }
     }
 
-    
     const mce::ClientTexture* Cached(const std::string& path) {
         auto it = cache.find(path);
         if (it == cache.end()) it = cache.emplace(path, Entry{LoadTex(*ctx, path), frame}).first;
@@ -313,10 +304,9 @@ private:
 
     void Report(const std::string& path, const std::string& reason) {
         if (reported.insert(path).second)
-            nugget::Log().warn("texture '{}' unavailable: {}", path, reason);
+            modmenu::Log().warn("texture '{}' unavailable: {}", path, reason);
     }
 
-    
     void ResetTextures() {
         cache.clear();
         owner = nullptr;
@@ -336,7 +326,7 @@ private:
 };
 
 McBackend& Mc() {
-    static McBackend* mc = new McBackend();   
+    static McBackend* mc = new McBackend();
     return *mc;
 }
 
@@ -345,8 +335,7 @@ void FrameSize(UIRenderContext& ctx, float& w, float& h) {
     w = clip._x1 - clip._x0;
     h = clip._y1 - clip._y0;
 }
-
-} 
+}
 
 void Install() {
     MossUI::SetBackend(&Mc());
@@ -354,10 +343,13 @@ void Install() {
 }
 
 void Render(UIRenderContext& ctx) {
+    ctx.setFullClippingRectangle();
+    ctx.disableScissorTest();
     float w, h;
     FrameSize(ctx, w, h);
     Mc().Begin(ctx);
     MossUI::Render(w, h);
+    ctx.setFullClippingRectangle();
+    ctx.disableScissorTest();
 }
-
-} 
+}

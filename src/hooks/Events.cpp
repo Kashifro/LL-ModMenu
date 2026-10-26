@@ -1,12 +1,11 @@
-
 #include "hooks/Hooks.hpp"
 
 #include "MossMC/MossMC.hpp"
 #include "MossUI/MossUI.hpp"
 #include "modmenu/ModMenu.hpp"
-#include "nugget/ClientContext.hpp"
-#include "nugget/Keybinds.hpp"
-#include "nugget/Log.hpp"
+#include "platform/ClientContext.hpp"
+#include "platform/Keybinds.hpp"
+#include "platform/Log.hpp"
 
 #include "ll/api/event/EventBus.h"
 #include "ll/api/event/input/KeyInputEvent.h"
@@ -15,8 +14,8 @@
 
 #include "mc/client/gui/screens/ScreenView.h"
 
-#include <windows.h>
-#undef MOD_ALT      
+#include <Windows.h>
+#undef MOD_ALT
 #undef MOD_SHIFT
 #undef MOD_CONTROL
 #undef MOD_WIN
@@ -33,17 +32,16 @@ std::vector<ListenerPtr> listeners;
 
 bool AsyncKeyDown(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
 
+// The generic VK_SHIFT / VK_CONTROL / VK_MENU already cover both sides. The key being handled wins over the
+// async state, which can lag the event.
+bool Held(int any, int left, int right, int key, bool down) {
+    return key == any || key == left || key == right ? down : AsyncKeyDown(any);
+}
+
 int CurrentModifiers(int key, bool down) {
-    bool shift = AsyncKeyDown(VK_SHIFT) || AsyncKeyDown(VK_LSHIFT) || AsyncKeyDown(VK_RSHIFT);
-    bool ctrl = AsyncKeyDown(VK_CONTROL) || AsyncKeyDown(VK_LCONTROL) || AsyncKeyDown(VK_RCONTROL);
-    bool alt = AsyncKeyDown(VK_MENU) || AsyncKeyDown(VK_LMENU) || AsyncKeyDown(VK_RMENU);
-
-    
-    if (key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT) shift = down;
-    if (key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL) ctrl = down;
-    if (key == VK_MENU || key == VK_LMENU || key == VK_RMENU) alt = down;
-
-    return (shift ? MossUI::MOD_SHIFT : 0) | (ctrl ? MossUI::MOD_CTRL : 0) | (alt ? MossUI::MOD_ALT : 0);
+    return (Held(VK_SHIFT, VK_LSHIFT, VK_RSHIFT, key, down) ? MossUI::MOD_SHIFT : 0) |
+           (Held(VK_CONTROL, VK_LCONTROL, VK_RCONTROL, key, down) ? MossUI::MOD_CTRL : 0) |
+           (Held(VK_MENU, VK_LMENU, VK_RMENU, key, down) ? MossUI::MOD_ALT : 0);
 }
 
 void OnKey(KeyInputEvent& ev) {
@@ -54,8 +52,9 @@ void OnKey(KeyInputEvent& ev) {
     if (MossUI::IsOpen()) {
         MossUI::OnKey(key, down, mods & MossUI::MOD_SHIFT, mods & MossUI::MOD_CTRL, mods & MossUI::MOD_ALT);
         ev.cancel();
-    } else if (down && nugget::clientctx::IsOnScreen("hud_screen") &&
-               nugget::modmenu::InGameEnabled() && nugget::keybinds::Dispatch(key)) {
+    } else if (down && modmenu::clientctx::IsOnScreen("hud_screen") &&
+               modmenu::InGameEnabled() && modmenu::keybinds::IsOpenKey(key)) {
+        modmenu::Open();
         ev.cancel();
     }
 }
@@ -76,10 +75,9 @@ int SehFilter(EXCEPTION_POINTERS* p) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-
 void RenderBody(AfterUIRenderEvent& ev) {
     const std::string name = ev.screenView().getScreenName();
-    nugget::clientctx::SetScreenName(name);
+    modmenu::clientctx::SetScreenName(name);
     if (MossUI::IsOpen() && (name == "start_screen" || name == "hud_screen"))
         MossMC::Render(ev.uiRenderContext());
 }
@@ -91,15 +89,15 @@ void OnRender(AfterUIRenderEvent& ev) {
         if (errors++ < 5) {
             const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(L"ModMenu.dll"));
             const auto addr = reinterpret_cast<uintptr_t>(sehAddr);
-            nugget::Log().error("render CRASH: code 0x{:08X} addr 0x{:X} (ModMenu.dll+0x{:X})",
+            modmenu::Log().error("render CRASH: code 0x{:08X} addr 0x{:X} (ModMenu.dll+0x{:X})",
                                 sehCode, addr, addr - base);
         }
     }
 }
 
-} 
+}
 
-namespace nugget::hooks {
+namespace modmenu::hooks {
 
 void InstallEvents() {
     if (!listeners.empty()) return;
@@ -115,4 +113,4 @@ void RemoveEvents() {
     listeners.clear();
 }
 
-} 
+}

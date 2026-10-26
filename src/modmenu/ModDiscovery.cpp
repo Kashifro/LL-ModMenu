@@ -1,15 +1,17 @@
 #include "modmenu/ModMenu.hpp"
 
 #include "ll/api/io/FileUtils.h"
-#include "ll/api/mod/Manifest.h"
 #include "ll/api/mod/Mod.h"
 #include "ll/api/mod/ModManagerRegistry.h"
 #include "ll/api/mod/NativeMod.h"
 
+#include "modmenu/internal/JsonConfig.hpp"
 #include "modmenu/internal/Registry.hpp"
-#include "modmenu/internal/ModMenuSettings.hpp"
+#include "modmenu/internal/Settings.hpp"
 #include "nlohmann/json.hpp"
-#include "nugget/Log.hpp"
+#include "platform/Log.hpp"
+
+#include <Windows.h>
 
 #include <algorithm>
 #include <array>
@@ -22,40 +24,36 @@
 #include <string>
 #include <utility>
 
-namespace nugget::modmenu {
+namespace modmenu {
 namespace {
 
+using json = nlohmann::json;
 using detail::NormName;
 using detail::Registry;
 using detail::ResolveModIcon;
+using Extra = std::map<std::string, std::string>;
 
 constexpr const char* NO_DESC = "No description provided.";
 std::set<std::string> discoveredIds;
 
-using Extra = std::map<std::string, std::string>;
+std::optional<json> ReadManifest(const std::filesystem::path& modDir) {
+    const auto text = ll::file_utils::readFile(modDir / "manifest.json");
+    if (!text) return std::nullopt;
+    auto j = json::parse(*text, nullptr, false);
+    if (!j.is_object() || j.value("name", std::string()).empty()) return std::nullopt;
+    return j;
+}
 
-
-Extra ExtraFromJson(const nlohmann::json& manifest) {
+Extra ExtraFrom(const json& manifest) {
     Extra out;
-    for (const char* key : {"extraInfo", "extrainfo"}) {
-        const auto it = manifest.find(key);
-        if (it == manifest.end() || !it->is_object()) continue;
+    const auto it = manifest.find("extraInfo");
+    if (it != manifest.end() && it->is_object())
         for (const auto& [k, v] : it->items())
             if (v.is_string()) out[k] = v.get<std::string>();
-        break;
-    }
     return out;
 }
 
-
-Extra ExtraFromMod(const ll::mod::Manifest& mf) {
-    Extra out;
-    if (mf.extraInfo)
-        for (const auto& [k, v] : *mf.extraInfo) out[k] = v;
-    return out;
-}
-
-
+// Fills fields the manifest left empty from its "extraInfo" block.
 void ApplyExtra(ModInfo& info, const Extra& extra, const std::filesystem::path& modDir) {
     auto get = [&](const char* key) {
         const auto it = extra.find(key);
@@ -92,100 +90,110 @@ ModInfo* FindByName(const std::string& key) {
     return nullptr;
 }
 
+ModInfo InfoFrom(const json& manifest, const std::filesystem::path& modDir) {
+    ModInfo info;
+    info.name = manifest.value("name", std::string());
+    info.id = NormName(info.name);
+    const std::string version = manifest.value("version", std::string());
+    const std::string description = manifest.value("description", std::string());
+    info.version = version.empty() ? "unknown" : version;
+    info.author = manifest.value("author", std::string());
+    info.description = description.empty() ? NO_DESC : description;
+    ApplyExtra(info, ExtraFrom(manifest), modDir);
+    return info;
+}
+
+std::string Capitalized(std::string s) {
+    s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
+    return s;
+}
+
 int DiscoverLoadedMods() {
     int added = 0;
     for (ll::mod::Mod& mod : ll::mod::ModManagerRegistry::getInstance().mods()) {
         try {
-            const auto& mf = mod.getManifest();
-            if (mf.name.empty()) continue;
-            const std::string key = NormName(mf.name);
+            const auto manifest = ReadManifest(mod.getModDir());
+            if (!manifest) continue;
+            ModInfo info = InfoFrom(*manifest, mod.getModDir());
 
-            if (ModInfo* have = FindByName(key)) {
-                if (!discoveredIds.count(have->id)) {
-                    ApplyExtra(*have, ExtraFromMod(mf), mod.getModDir());
+            if (ModInfo* have = FindByName(info.id)) {
+                if (!discoveredIds.erase(have->id)) {
+                    ApplyExtra(*have, ExtraFrom(*manifest), mod.getModDir());
                     continue;
                 }
             }
 
-            ModInfo info;
-            info.id = key;
-            info.name = mf.name;
-            info.version = mf.version ? mf.version->to_string() : std::string("unknown");
-            info.author = mf.author.value_or("");
-            info.description = mf.description.value_or(NO_DESC);
-
+            const std::string type = manifest->value("type", std::string());
+            const std::string platform = manifest->value("platform", std::string());
             info.badges.clear();
-            if (mf.type == "preload-native") info.badges.push_back("Library");
-            else if (mf.platform && !mf.platform->empty()) {
-                std::string p = *mf.platform;
-                p[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(p[0])));
-                info.badges.push_back(std::move(p));
-            } else info.badges.push_back("Mod");
-            if (!mod.isEnabled()) info.badges.push_back("Disabled");
+            if (type == "preload-native") info.badges.push_back(BADGE_LIBRARY);
+            else info.badges.push_back(platform.empty() ? BADGE_MOD : Capitalized(platform));
+            if (!mod.isEnabled()) info.badges.push_back(BADGE_DISABLED);
 
-            ApplyExtra(info, ExtraFromMod(mf), mod.getModDir());
+            detail::Notify notify;
+            if (type == "native" || type == "preload-native") {
+                const auto dll = static_cast<HMODULE>(static_cast<ll::mod::NativeMod&>(mod).getHandle());
+                if (auto fn = reinterpret_cast<void (*)()>(GetProcAddress(dll, "ModMenu_OpenConfigScreen")))
+                    info.openScreen = [fn] { fn(); };
+                if (auto fn = reinterpret_cast<void (*)(const char*)>(GetProcAddress(dll, "ModMenu_OnConfigChanged")))
+                    notify = [fn](const std::string& path) { fn(path.c_str()); };
+            }
+            // Mods that registered nothing still get a page, built from their own config.json.
+            if (const auto cfg = mod.getConfigDir() / "config.json"; std::filesystem::exists(cfg))
+                info.settings = [cfg, notify] { return detail::JsonConfigSettings(cfg, notify); };
 
             if (discoveredIds.insert(info.id).second) ++added;
             RegisterMod(std::move(info));
         } catch (const std::exception& e) {
-            nugget::Log().error("modmenu: skipped a mod: {}", e.what());
+            Log().error("modmenu: skipped a mod: {}", e.what());
         } catch (...) {
-            nugget::Log().error("modmenu: skipped a mod");
+            Log().error("modmenu: skipped a mod");
         }
     }
     return added;
 }
-
 
 int DiscoverUnloadedMods() {
     int added = 0;
     std::error_code ec;
-    const auto dir = ll::mod::NativeMod::current()->getModDir().parent_path();
+    const auto dir = Self().getModDir().parent_path();
+    std::set<std::string> found;
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
         try {
-            const auto text = ll::file_utils::readFile(entry.path() / "manifest.json");
-            if (!text) continue;
-            const auto j = nlohmann::json::parse(*text, nullptr, false);
-            const std::string name = j.is_object() ? j.value("name", std::string()) : std::string();
-            if (name.empty()) continue;
-            const std::string key = NormName(name);
-            if (FindByName(key)) continue;
-
-            ModInfo info;
-            info.id = key;
-            info.name = name;
-            const std::string version = j.value("version", std::string());
-            const std::string description = j.value("description", std::string());
-            info.version = version.empty() ? "unknown" : version;
-            info.author = j.value("author", std::string());
-            info.description = description.empty() ? NO_DESC : description;
-            ApplyExtra(info, ExtraFromJson(j), entry.path());
-            info.badges = {"Not loaded"};
+            const auto manifest = ReadManifest(entry.path());
+            if (!manifest) continue;
+            ModInfo info = InfoFrom(*manifest, entry.path());
+            if (FindByName(info.id)) {
+                if (discoveredIds.count(info.id)) found.insert(info.id);
+                continue;
+            }
+            info.badges = {BADGE_NOT_LOADED};
             discoveredIds.insert(info.id);
+            found.insert(info.id);
             RegisterMod(std::move(info));
             ++added;
         } catch (...) {
+            Log().warn("modmenu: skipped unreadable manifest in {}", entry.path().string());
         }
     }
+    if (ec) {
+        Log().error("modmenu: could not scan mod directory: {}", ec.message());
+        return added;
+    }
+    std::erase_if(Registry(), [&](const ModInfo& info) {
+        return discoveredIds.contains(info.id) && !found.contains(info.id);
+    });
+    discoveredIds = std::move(found);
     return added;
 }
 
 }
 
-void RegisterMod(ModInfo info) {
-    detail::InvalidateSettings(info.id);
-    auto& mods = detail::Registry();
-    auto it = std::find_if(mods.begin(), mods.end(), [&](const ModInfo& m) { return m.id == info.id; });
-    if (it != mods.end()) *it = std::move(info);
-    else mods.push_back(std::move(info));
-    std::stable_sort(mods.begin(), mods.end(), [](const ModInfo& a, const ModInfo& b) { return a.name < b.name; });
-}
-
 void DiscoverInstalledMods() {
     int added = 0;
-    try { added += DiscoverLoadedMods(); } catch (...) { nugget::Log().error("modmenu: mod discovery failed"); }
+    try { added += DiscoverLoadedMods(); } catch (...) { Log().error("modmenu: mod discovery failed"); }
     added += DiscoverUnloadedMods();
-    if (added) nugget::Log().info("modmenu: listed {} installed mod(s)", added);
+    if (added) Log().info("modmenu: listed {} installed mod(s)", added);
 }
 
 }

@@ -1,7 +1,7 @@
 ﻿{
-    "name": "LL-ModMenu",
+    "name": "ModMenu",
     "entry": "ModMenu.dll",
-    "version": "1.0.0",
+    "version": "1.0.1-mc26.51",
     "type": "native",
     "platform": "client",
     "author": "Kashifro",

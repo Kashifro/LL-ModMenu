@@ -5,10 +5,10 @@
 #include <utility>
 #include <vector>
 
-namespace nugget::modmenu {
+namespace modmenu {
 
 struct Setting {
-    enum class Kind { Toggle, Key, Slider, Header, Color, Category, Action, Choice, Text };
+    enum class Kind { Toggle, Key, Slider, Section, Color, Category, Action, Choice, Text };
     Kind kind = Kind::Toggle;
     std::string label;
     std::string tooltip;
@@ -20,13 +20,12 @@ struct Setting {
     int defKey = 0;
     std::function<float()> getFloat;
     std::function<void(float)> setFloat;
-    float minV = 0, maxV = 1, step = 0;
+    float min = 0, max = 1, step = 0;
     float defFloat = 0;
     int decimals = 0;
-    std::string suffix;
+    std::string unit;
     std::vector<Setting> children;
     std::function<void()> onAction;
-    std::string glyph;
     bool confirm = false;
     std::function<bool()> shownIf;
     std::function<int()> getInt;
@@ -40,102 +39,50 @@ struct Setting {
 
     Setting Tip(std::string text) && { tooltip = std::move(text); return std::move(*this); }
     Setting ShownIf(std::function<bool()> fn) && { shownIf = std::move(fn); return std::move(*this); }
-    Setting Glyph(std::string name) && { glyph = std::move(name); return std::move(*this); }
 
     static Setting Toggle(std::string label, std::function<bool()> get, std::function<void(bool)> set, bool def) {
-        Setting row;
-        row.label = std::move(label);
-        row.getBool = std::move(get);
-        row.setBool = std::move(set);
-        row.defBool = def;
-        return row;
+        return {.label = std::move(label), .getBool = std::move(get), .setBool = std::move(set), .defBool = def};
     }
 
-    static Setting KeyBind(std::string label, std::function<int()> get, std::function<void(int)> set, int def) {
-        Setting row;
-        row.kind = Kind::Key;
-        row.label = std::move(label);
-        row.getKey = std::move(get);
-        row.setKey = std::move(set);
-        row.defKey = def;
-        return row;
+    static Setting Key(std::string label, std::function<int()> get, std::function<void(int)> set, int def) {
+        return {.kind = Kind::Key, .label = std::move(label), .getKey = std::move(get), .setKey = std::move(set),
+                .defKey = def};
     }
 
     static Setting Slider(std::string label, std::function<float()> get, std::function<void(float)> set,
-                          float min, float max, float def, float step = 0, int decimals = 0,
-                          std::string suffix = {}) {
-        Setting row;
-        row.kind = Kind::Slider;
-        row.label = std::move(label);
-        row.getFloat = std::move(get);
-        row.setFloat = std::move(set);
-        row.minV = min;
-        row.maxV = max;
-        row.defFloat = def;
-        row.step = step;
-        row.decimals = decimals;
-        row.suffix = std::move(suffix);
-        return row;
+                          float min, float max, float def, float step = 0, int decimals = 0, std::string unit = {}) {
+        return {.kind = Kind::Slider, .label = std::move(label), .getFloat = std::move(get),
+                .setFloat = std::move(set), .min = min, .max = max, .step = step, .defFloat = def,
+                .decimals = decimals, .unit = std::move(unit)};
     }
 
     static Setting Color(std::string label, std::function<int()> get, std::function<void(int)> set, int def) {
-        Setting row;
-        row.kind = Kind::Color;
-        row.label = std::move(label);
-        row.getInt = std::move(get);
-        row.setInt = std::move(set);
-        row.defInt = def;
-        return row;
+        return {.kind = Kind::Color, .label = std::move(label), .getInt = std::move(get), .setInt = std::move(set),
+                .defInt = def};
     }
 
     static Setting Choice(std::string label, std::vector<std::string> options, std::function<int()> get,
                           std::function<void(int)> set, int def = 0) {
-        Setting row;
-        row.kind = Kind::Choice;
-        row.label = std::move(label);
-        row.options = std::move(options);
-        row.getInt = std::move(get);
-        row.setInt = std::move(set);
-        row.defInt = def;
-        return row;
+        return {.kind = Kind::Choice, .label = std::move(label), .getInt = std::move(get), .setInt = std::move(set),
+                .defInt = def, .options = std::move(options)};
     }
 
     static Setting Text(std::string label, std::function<std::string()> get,
                         std::function<void(const std::string&)> set, std::string def = {},
                         std::string placeholder = {}) {
-        Setting row;
-        row.kind = Kind::Text;
-        row.label = std::move(label);
-        row.getText = std::move(get);
-        row.setText = std::move(set);
-        row.defText = std::move(def);
-        row.placeholder = std::move(placeholder);
-        return row;
+        return {.kind = Kind::Text, .label = std::move(label), .getText = std::move(get), .setText = std::move(set),
+                .defText = std::move(def), .placeholder = std::move(placeholder)};
     }
 
     static Setting Category(std::string label, std::vector<Setting> children) {
-        Setting row;
-        row.kind = Kind::Category;
-        row.label = std::move(label);
-        row.children = std::move(children);
-        return row;
+        return {.kind = Kind::Category, .label = std::move(label), .children = std::move(children)};
     }
 
     static Setting Action(std::string label, std::function<void()> run, bool confirm = false) {
-        Setting row;
-        row.kind = Kind::Action;
-        row.label = std::move(label);
-        row.onAction = std::move(run);
-        row.confirm = confirm;
-        return row;
+        return {.kind = Kind::Action, .label = std::move(label), .onAction = std::move(run), .confirm = confirm};
     }
 
-    static Setting Section(std::string label) {
-        Setting row;
-        row.kind = Kind::Header;
-        row.label = std::move(label);
-        return row;
-    }
+    static Setting Section(std::string label) { return {.kind = Kind::Section, .label = std::move(label)}; }
 
     void Reset() const {
         switch (kind) {
@@ -146,7 +93,7 @@ struct Setting {
             case Kind::Text: if (setText) setText(defText); break;
             case Kind::Category: for (const auto& child : children) child.Reset(); break;
             case Kind::Slider: if (setFloat) setFloat(defFloat); break;
-            case Kind::Header:
+            case Kind::Section:
             case Kind::Action: break;
         }
     }

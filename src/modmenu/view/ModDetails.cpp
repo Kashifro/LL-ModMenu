@@ -1,6 +1,6 @@
 #include "modmenu/view/internal/ModDetails.hpp"
 
-namespace nugget::modmenu::view {
+namespace modmenu::view {
 
 void DrawModHeader(UI& ui, const ModInfo& mod, float rightX, float paneW) {
     constexpr float headerY = MOD_DETAILS_HEADER_Y;
@@ -17,7 +17,7 @@ void DrawModHeader(UI& ui, const ModInfo& mod, float rightX, float paneW) {
         }
     }
     ui.Text(tx, ui.Width(), headerY + 12, "v" + mod.version, TEXT_GRAY, Align::Left, 1.0f);
-    if (Opt(OPT_CREDITS) && !mod.author.empty()) {
+    if (Opt(OPT_SHOW_CREDITS) && !mod.author.empty()) {
         auto authors = SplitAuthors(mod.author);
         std::string joined;
         for (size_t i = 0; i < authors.size(); ++i) joined += (i ? ", " : "") + authors[i];
@@ -43,7 +43,7 @@ void BuildModDescription(UI& ui, const ModInfo* mod, DescView& desc) {
     auto blank = [&] { desc.lines.push_back({}); };
 
     if (!mod->description.empty()) push(mod->description, 0, wrap);
-    if (Opt(OPT_LINKS) && (!mod->website.empty() || !mod->issues.empty() || !mod->source.empty() || !mod->links.empty())) {
+    if (Opt(OPT_SHOW_LINKS) && (!mod->website.empty() || !mod->issues.empty() || !mod->source.empty() || !mod->links.empty())) {
         if (!desc.lines.empty()) blank();
         push("Links:", 0, wrap);
         if (!mod->website.empty()) push("Website", 8, wrap - 16, mod->website);
@@ -51,12 +51,12 @@ void BuildModDescription(UI& ui, const ModInfo* mod, DescView& desc) {
         if (!mod->source.empty()) push("Source", 8, wrap - 16, mod->source);
         for (const auto& [label, url] : mod->links) push(label, 8, wrap - 16, url);
     }
-    if (Opt(OPT_LICENSE) && !mod->license.empty()) {
+    if (Opt(OPT_SHOW_LICENSE) && !mod->license.empty()) {
         if (!desc.lines.empty()) blank();
         push("License:", 0, wrap);
         push(mod->license, 8, wrap - 16);
     }
-    if (Opt(OPT_CREDITS) && !mod->author.empty()) {
+    if (Opt(OPT_SHOW_CREDITS) && !mod->author.empty()) {
         if (!desc.lines.empty()) blank();
         push("Credits:", 0, wrap);
         push("Authors:", 8, wrap - 16);
