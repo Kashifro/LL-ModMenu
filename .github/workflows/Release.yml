@@ -31,7 +31,7 @@ jobs:
 
       - run: xmake repo -u
 
-      - run: xmake f -a x64 -m release -y --target_type=client --vs_runtime=MD
+      - run: xmake f -a x64 -m release -y --runtimes=MD
 
       - run: xmake -y -w
 
